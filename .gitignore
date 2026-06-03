@@ -1,0 +1,28 @@
+# --- Working scaffolding (not durable) ---
+docs/plans/
+docs/reviews/
+docs/requirements/*.local.md
+*.tmp.md
+
+# --- Android / Gradle ---
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+**/build/
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+*.ap_
+*.dex
+/keystore.properties
+*.jks
+*.keystore
+
+# --- Kotlin / misc ---
+*.hprof
+local.properties

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark window chrome so there's no white flash before Compose draws. -->
+    <style name="Theme.RailSignal" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/rs_bg</item>
+        <item name="android:statusBarColor">@color/rs_bg</item>
+        <item name="android:navigationBarColor">@color/rs_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
