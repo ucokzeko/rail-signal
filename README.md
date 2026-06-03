@@ -106,3 +106,8 @@ Nothing leaves the device except a CSV you explicitly export and share.
 
 Kotlin · Jetpack Compose (Material 3) · Room · coroutines/Flow · location-type foreground
 service · Shizuku (optional). minSdk 31, targetSdk 36.
+
+## License
+
+[MIT](LICENSE) — free to use, modify, and share, **provided as-is with no warranty or
+liability**.
