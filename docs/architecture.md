@@ -45,7 +45,7 @@ location provider, or recovery mechanism. See [`adr/`](adr/) for the decisions b
 
 | Package | Responsibility | Key types |
 |---------|----------------|-----------|
-| `telephony/` | Live radio readings; hides `TelephonyCallback`/`CellInfo`, NSA-5G inference, permission gating | `TelephonySource` (port), `TelephonyCallbackAdapter`, `RadioReading`, `Fidelity` |
+| `telephony/` | Live radio readings + call-active state; hides `TelephonyCallback`/`CellInfo`, NSA-5G inference, permission gating | `TelephonySource` (port), `TelephonyCallbackAdapter`, `RadioReading`, `Fidelity` |
 | `location/` | GPS stream | `LocationSource` (port), `FusedLocationAdapter`, `LocationFix` |
 | `data/` | Local persistence | `RailSignalDatabase`, `Trip`, `Sample`, `RecoveryEvent`, DAOs, `TripStats` |
 | `trip/` | Recording orchestration + UI bridge | `RecordingController`, `RadioReading.toSample` |
@@ -60,7 +60,10 @@ location provider, or recovery mechanism. See [`adr/`](adr/) for the decisions b
 2. A heartbeat (~4 s) and every service-state change produce a `Sample` (via `SampleMapper`),
    written to Room; live status is pushed to `RecordingController` for the UI.
 3. The **watchdog** evaluates each tick for a cling (data unvalidated, RSRP collapse, or
-   telephony silence) and, when sustained, invokes the active `RadioActuator`.
+   telephony silence) and, when sustained, invokes the active `RadioActuator`. It is
+   **call-aware**: a re-register can't dislodge the cell carrying an active voice bearer, so
+   while a call is up the watchdog defers and instead fires the instant the call ends
+   (`TelephonySource.inCall`; logged with a `_POSTCALL` trigger suffix).
 4. The **Live** screen subscribes to `TelephonySource` directly; the **Record** screen reads
    `RecordingController` + Room (`Trip`, `TripStats`, `RecoveryEvent`).
 
@@ -79,7 +82,7 @@ All radio actions sit behind `RadioActuator`, selected by `RecoveryMode` + a bat
 
 | Mode | Actuator | Mechanism | Needs |
 |------|----------|-----------|-------|
-| **Auto** | `ShizukuActuator` → `ShizukuRadioService` | Cycle allowed network types (drop NR → restore) via `setAllowedNetworkTypesForReason`, run as shell uid | Shizuku running |
+| **Auto** | `ShizukuActuator` → `ShizukuRadioService` | Power-cycle the cellular radio only — `ITelephony.setRadioPower(false)` → hold ~9s → `(true)` via the raw binder, run as shell uid (keeps Wi-Fi up). Aborts if a call is active. | Shizuku running |
 | **Notify** | `GuidedPromptActuator` | High-priority notification deep-linking to airplane/network settings | nothing |
 | **Off** | — | No radio action (stock behaviour) | nothing |
 

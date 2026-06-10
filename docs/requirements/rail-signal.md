@@ -127,7 +127,7 @@ build is steered toward, not guesses:
 | 3 | **Outbound-send queueing** | **Confirmed OUT of v1.** Pre-emption = predict + warn + arm fast recovery on exit. No traffic interception, no in-app outbox | ✓ resolved |
 | 4 | **Shizuku re-arm friction** | Acceptable for a technical user, *if* the spike proves value | Confirmed by "spike-first" choice; revisit after spike. |
 | 5 | **Distribution** | Personal sideload (debug/release APK), no Play Store v1 | Confirm; Play Store later would add policy work (accessibility/secure-settings category). |
-| 6 | **Recovery action of choice** (if auto) | Spike tests *both* airplane-cycle and network-type-lock; pick the one that proves reliable | Decided by spike results. |
+| 6 | **Recovery action of choice** (if auto) | Spike tests *both* airplane-cycle and network-type-lock; pick the one that proves reliable | ✓ Resolved (2026-06-10): **neither** — network-type lock doesn't detach the cell, airplane drops Wi-Fi. `ITelephony.setRadioPower` cellular power-cycle won. See [ADR 0003](../adr/0003-spike-gate-auto-recovery.md). |
 | 7 | **Map seeding** | Cold-start map is empty; fills over trips. Optionally seed from CellMapper/OpenCellID | Want external seed data, or purely personal? |
 
 ## Risks

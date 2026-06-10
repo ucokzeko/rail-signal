@@ -1,6 +1,9 @@
 package com.railsignal.ui
 
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.telephony.TelephonyManager
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,9 +38,14 @@ import androidx.compose.ui.unit.dp
 import com.railsignal.data.RecoveryEvent
 import com.railsignal.radio.RecoveryMode
 import com.railsignal.radio.RecoveryPrefs
+import com.railsignal.radio.RecoveryStrategy
+import com.railsignal.radio.ShizukuActuator
 import com.railsignal.ui.theme.SignalDead
 import com.railsignal.ui.theme.SignalWeak
 import com.railsignal.ui.theme.Teal
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -79,6 +88,28 @@ fun RecoveryCard(events: List<RecoveryEvent>) {
                 OutlinedButton(onClick = { requestShizuku() }) { Text("Grant Shizuku") }
             }
 
+            // Debug builds only: fire the real recovery path (ShizukuActuator → setRadioPower)
+            // on demand, so the cellular cycle can be verified without waiting for a dead zone.
+            // Honours the same call guard as auto-recovery — it won't cut an active call.
+            if (isDebuggable(context)) {
+                val scope = rememberCoroutineScope()
+                OutlinedButton(
+                    enabled = ready,
+                    onClick = {
+                        Toast.makeText(context, "Testing radio cycle…", Toast.LENGTH_SHORT).show()
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) {
+                                ShizukuActuator(context).recover(
+                                    RecoveryStrategy.RADIO_CYCLE,
+                                    abortIf = { deviceInCall(context) },
+                                )
+                            }
+                            Toast.makeText(context, "Test recovery: ${r.note}", Toast.LENGTH_LONG).show()
+                        }
+                    },
+                ) { Text("Test recovery (radio cycle)") }
+            }
+
             if (events.isNotEmpty()) {
                 Text("RECENT", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 events.take(6).forEach { e -> RecoveryRow(e, fmt.format(Date(e.tsMs))) }
@@ -104,6 +135,14 @@ private fun RecoveryRow(e: RecoveryEvent, time: String) {
         Text(tail, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = color)
     }
 }
+
+private fun isDebuggable(context: android.content.Context): Boolean =
+    (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+@Suppress("DEPRECATION")
+private fun deviceInCall(context: android.content.Context): Boolean = runCatching {
+    context.getSystemService(TelephonyManager::class.java)?.callState != TelephonyManager.CALL_STATE_IDLE
+}.getOrDefault(false)
 
 private fun shizukuReady(): Boolean = runCatching {
     Shizuku.pingBinder() && !Shizuku.isPreV11() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED

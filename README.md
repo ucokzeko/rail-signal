@@ -17,7 +17,8 @@ visible and does something about it, without root.
 - **Dead-zone profile** — each trip shows a signal health bar (alive / weak / dead) + average
   dBm + % dead.
 - **Cling recovery** — detects a stuck/weak cell and either notifies you to reset, or (via
-  Shizuku) **automatically forces a re-register** by briefly cycling the allowed network type.
+  Shizuku) **automatically forces a re-register** by briefly power-cycling the cellular radio
+  (Wi-Fi stays up).
 - **CSV export** — every sample, for offline analysis.
 
 ## Requirements
@@ -53,9 +54,9 @@ from battery optimization and add it to **"Never sleeping apps"** — the app pr
 
 ## Automatic recovery via Shizuku (no root)
 
-The privileged radio action (`setAllowedNetworkTypesForReason`) needs a system-level permission
-a normal app can't hold. Rail Signal runs it through **Shizuku**, which grants apps ADB/shell
-privileges **without root**.
+The privileged radio action (`ITelephony.setRadioPower`) needs a system-level permission
+(`MODIFY_PHONE_STATE`) a normal app can't hold. Rail Signal runs it through **Shizuku**, which
+grants apps ADB/shell privileges **without root**.
 
 1. **Install Shizuku** — https://github.com/RikkaApps/Shizuku (Play Store, or the GitHub
    release APK).
@@ -80,11 +81,15 @@ privileges **without root**.
 
 - **Detection** ignores Android's `ServiceState` (it reports "in service" straight through real
   blackouts) and instead uses data-validation, RSRP collapse, and telephony-callback silence.
-- **Action** — Auto briefly drops NR from the allowed network types and restores it, forcing a
-  RAT re-evaluation / re-registration **without** killing Wi-Fi or Bluetooth.
+- **Action** — Auto power-cycles **only the cellular radio** (`ITelephony.setRadioPower(false)`
+  → hold ~9s → `(true)`, via the raw binder through Shizuku), forcing a full re-registration /
+  fresh cell acquisition **without** dropping Wi-Fi or Bluetooth. It defers while you're on a
+  call and fires the instant the call ends.
 - A non-root app **cannot** change the modem's handover algorithm. This is detection +
-  re-register, not a signal booster. `setRadioPower` is a no-op on modern Android; airplane-mode
-  cycling works but is deliberately not used (it drops Wi-Fi/BT).
+  re-register, not a signal booster. (Verified on a Galaxy Z Fold 5: narrowing the *allowed
+  network types* does **not** dislodge a clung cell — the modem keeps the serving registration —
+  so the radio power-cycle is what actually works; airplane-mode cycling also works but is avoided
+  because it drops Wi-Fi/BT.)
 
 ## Data & privacy
 

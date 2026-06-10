@@ -17,7 +17,8 @@ class GuidedPromptActuator(private val ctx: Context) : RadioActuator {
 
     override fun capabilities() = Capabilities(canAuto = false, label = "Guided · tap to reset")
 
-    override suspend fun recover(strategy: RecoveryStrategy): RecoveryResult {
+    override suspend fun recover(strategy: RecoveryStrategy, abortIf: () -> Boolean): RecoveryResult {
+        // A notification touches no radio, so abortIf does not apply here.
         ensureChannel()
         val tap = PendingIntent.getActivity(
             ctx, 7,

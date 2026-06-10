@@ -21,9 +21,9 @@ object RecordingController {
         val startTs: Long? = null,
         val sampleCount: Int = 0,
         val latest: RadioReading? = null,
-        val recoveryMode: String = "—",   // "Auto · airplane cycle" | "Guided · tap to reset"
+        val recoveryMode: String = "—",   // "Auto · re-register" | "Guided · tap to reset"
         val recovering: Boolean = false,  // a recovery attempt is in flight
-        val lastRecovery: String? = null, // e.g. "AIRPLANE_CYCLE → RESTORED (8s)"
+        val lastRecovery: String? = null, // e.g. "RADIO_CYCLE → RESTORED (8s)"
     )
 
     private val _status = MutableStateFlow(Status())

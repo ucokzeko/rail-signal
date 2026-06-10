@@ -53,8 +53,9 @@ Ubiquitous language for the project. Code, tests, ADRs, and plans use these term
 - **Recovery** — restoring service after a drop. Two tiers:
   - **Guided recovery** — detect stuck state → one-tap deep-link / notification asking
     the user to toggle airplane mode or set "LTE preferred". Always available, no setup.
-  - **Auto-recovery** — automated radio reset (airplane cycle / network-type lock) with
-    no user tap. Requires **Shizuku**; gated behind a feasibility spike.
+  - **Auto-recovery** — automated cellular **radio power-cycle** (`ITelephony.setRadioPower`
+    off→on via Shizuku; keeps Wi-Fi up) with no user tap. Requires **Shizuku**; defers while
+    on a call and fires on call-end. (Feasibility-gated by ADR 0003 — passed 2026-06-10.)
 - **Shizuku** — an app that grants other apps ADB/shell-level privileges *without root*,
   via a daemon started over USB or wireless debugging. The only non-root path to
   *act* on the radio. Must be re-armed after each reboot; reliability is device-specific.
@@ -66,8 +67,9 @@ Ubiquitous language for the project. Code, tests, ADRs, and plans use these term
 - **`WRITE_SECURE_SETTINGS`** — ADB-grantable permission; lets the app *write* the
   airplane-mode setting but the **radio does not react** (the toggle broadcast is
   system-only), so it's a dead end for recovery on modern Android.
-- **`MODIFY_PHONE_STATE`** — `signature|privileged`; needed for network-type lock. Not
-  `pm grant`-able; reachable only via Shizuku (shell identity carries it).
+- **`MODIFY_PHONE_STATE`** — `signature|privileged`; needed for the radio power-cycle
+  (`ITelephony.setRadioPower`). Not `pm grant`-able; reachable only via Shizuku (shell identity
+  carries it).
 - **Foreground service (location type)** — the mechanism that keeps monitoring alive
   with the screen off; `location` type chosen because cell-identity needs location anyway
   and it's the most defensible against One UI's background-killing.

@@ -1,6 +1,6 @@
 # ADR 0003 — Gate automated recovery behind a hands-on Shizuku spike
 
-- **Status:** Accepted
+- **Status:** Accepted · spike run 2026-06-10 (verdict below)
 - **Date:** 2026-06-02
 - **Relates to:** [requirements](../requirements/rail-signal.md), [0001](0001-no-root-shizuku-seam-guided-baseline.md)
 
@@ -43,3 +43,27 @@ device.** Specifically:
   recovery + pre-emption even in the fail case.
 - This ADR will be **updated with the spike verdict** once run, recording what worked on One UI
   8.x for future reference.
+
+## Spike verdict (2026-06-10) — Fold 5 (SM-F946B), Telstra, One UI
+
+Run on the physical device through the shell (uid 2000) identity Shizuku provides:
+
+- **Network-type lock — REJECTED (ineffective).** `cmd phone set-allowed-network-types-for-users`
+  applies (readback confirms), but the modem keeps its CS/voice registration glued to the serving
+  LTE cell even when LTE is fully disallowed — only the data bearer reacts. Allowed-types is a
+  *cell-selection preference*, not a detach command, so it cannot dislodge a clung cell. No
+  permission level changes this (the shell command already runs at `MODIFY_PHONE_STATE`).
+- **Airplane cycle — works, not chosen.** `cmd connectivity airplane-mode enable/disable` (shell,
+  so Shizuku-reachable) forces a real re-registration and moved the device to a different cell —
+  but it drops Wi-Fi/Bluetooth too.
+- **`restart-modem` — unavailable.** `cmd phone restart-modem` is denied to the shell uid.
+- **`ITelephony.setRadioPower(false/true)` via the raw binder — CHOSEN.** Reached by reflection
+  (`ServiceManager.getService("phone")` → `ITelephony$Stub`), run as shell: a true cellular radio
+  power-cycle (`mVoiceRegState → POWER_OFF → re-register`) that **keeps Wi-Fi up**. No root, no
+  system app, no Knox trip. Validated end-to-end through the app's Shizuku user-service.
+
+**Gate resolved → PASS.** Auto-recovery is implemented as the `setRadioPower` cellular power-cycle
+behind the [0001](0001-no-root-shizuku-seam-guided-baseline.md) `RadioActuator` Shizuku adapter:
+hold the radio off ~9s (Samsung reaches `POWER_OFF` ~5–6s after the call), **deferred while a call
+is active** (it would drop the call) and **fired on call-end**, and run only during an active
+logging session.

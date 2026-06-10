@@ -29,8 +29,8 @@ Two-tier recovery with a hard architectural seam between *observe/decide* and *a
    permission beyond a deep-link/notification. The app detects the stuck state and asks the
    *user* to toggle. This is the dependable floor and is never removed.
 2. **Privileged actions go through a single `RadioActuator` port with a Shizuku adapter.** All
-   automated radio actions (airplane cycle, network-type lock) are isolated behind one
-   interface so the rest of the app never assumes they exist or work.
+   automated radio actions (the cellular radio power-cycle — see [0003](0003-spike-gate-auto-recovery.md))
+   are isolated behind one interface so the rest of the app never assumes they exist or work.
 3. **AccessibilityService actuation is explicitly rejected for v1** (fragility + policy), but the
    port leaves room for it as a future adapter.
 

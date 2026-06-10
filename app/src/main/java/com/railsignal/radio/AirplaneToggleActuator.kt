@@ -31,8 +31,9 @@ class AirplaneToggleActuator(private val ctx: Context) : RadioActuator {
     fun isAirplaneOn(): Boolean =
         Settings.Global.getInt(ctx.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
 
-    override suspend fun recover(strategy: RecoveryStrategy): RecoveryResult {
+    override suspend fun recover(strategy: RecoveryStrategy, abortIf: () -> Boolean): RecoveryResult {
         if (!hasPermission()) return RecoveryResult(false, "no WRITE_SECURE_SETTINGS")
+        if (abortIf()) return RecoveryResult(false, "call active — deferred", deferred = true)
         return try {
             setAirplane(true)
             delay(AIRPLANE_OFF_MS)
