@@ -11,11 +11,12 @@ import kotlinx.coroutines.delay
 import rikka.shizuku.Shizuku
 
 /**
- * Forces a radio re-registration by cycling ONLY the cellular radio (setRadioPower off->on)
- * through a Shizuku user-service running as shell. Wi-Fi / Bluetooth / Wi-Fi-calling stay up —
- * cleaner than airplane mode. No root; needs the Shizuku daemon running + permission granted.
+ * Forces a radio re-registration by power-cycling ONLY the cellular radio (setRadioPower
+ * off → hold → on; see [ShizukuRadioService]) through a Shizuku user-service running as shell.
+ * Wi-Fi / Bluetooth / Wi-Fi-calling stay up, cleaner than airplane mode. No root; needs the
+ * Shizuku daemon running + permission granted.
  *
- * Unverified on-device until tested — degrades to guided via the watchdog if anything fails.
+ * Degrades to guided via the watchdog if anything fails.
  */
 class ShizukuActuator(private val ctx: Context) : RadioActuator {
 
@@ -47,13 +48,16 @@ class ShizukuActuator(private val ctx: Context) : RadioActuator {
         label = if (ready()) "Auto · re-register (Shizuku)" else "Shizuku not ready",
     )
 
-    override suspend fun recover(strategy: RecoveryStrategy): RecoveryResult {
+    override suspend fun recover(strategy: RecoveryStrategy, abortIf: () -> Boolean): RecoveryResult {
         if (!ready()) return RecoveryResult(false, "Shizuku not ready")
         val svc = bind() ?: return RecoveryResult(false, "user service bind failed")
+        // bind() can take seconds; this is the last instant before we cut the radio, so honour
+        // the abort gate here (e.g. a call started meanwhile) and skip rather than drop it.
+        if (abortIf()) return RecoveryResult(false, "call active — deferred", deferred = true)
         return runCatching {
-            // Blocks ~NETWORK_HOLD_MS inside the user service (LTE-only hold, then restore).
-            val ok = svc.reRegister(NETWORK_HOLD_MS)
-            if (ok) RecoveryResult(true, "network-type re-register") else RecoveryResult(false, "reRegister failed")
+            // Blocks ~RADIO_OFF_HOLD_MS inside the user service (radio off, then restore on).
+            val ok = svc.reRegister(RADIO_OFF_HOLD_MS)
+            if (ok) RecoveryResult(true, "radio power-cycle") else RecoveryResult(false, "reRegister failed")
         }.getOrElse { RecoveryResult(false, "failed: ${it.message}") }
     }
 
@@ -70,6 +74,10 @@ class ShizukuActuator(private val ctx: Context) : RadioActuator {
     }
 
     companion object {
-        const val NETWORK_HOLD_MS = 5_000L
+        // How long to hold the cellular radio OFF before powering it back on. Samsung takes
+        // ~5–6s to actually reach POWER_OFF after setRadioPower(false), so this must be long
+        // enough that the radio is genuinely off for a few seconds (forcing a fresh acquisition
+        // on power-on) — measured on-device.
+        const val RADIO_OFF_HOLD_MS = 9_000L
     }
 }

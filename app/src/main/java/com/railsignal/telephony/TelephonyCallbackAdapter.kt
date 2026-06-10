@@ -82,6 +82,26 @@ class TelephonyCallbackAdapter(context: Context) : TelephonySource {
         // callbackFlow REQUIRES awaitClose on every path, including the early-failure one.
         awaitClose { if (registered) runCatching { tm?.unregisterTelephonyCallback(callback) } }
     }
+
+    @SuppressLint("MissingPermission")
+    override val inCall: Flow<Boolean> = callbackFlow {
+        val executor = Executor { it.run() }
+        val callback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+            // No phone number arg here → needs only READ_PHONE_STATE, not READ_CALL_LOG.
+            override fun onCallStateChanged(state: Int) {
+                trySend(state != TelephonyManager.CALL_STATE_IDLE)
+            }
+        }
+        val registered = try {
+            tm?.registerTelephonyCallback(executor, callback)
+            true
+        } catch (e: SecurityException) {
+            close(e) // READ_PHONE_STATE not granted yet; collector can re-subscribe later
+            false
+        }
+        if (registered) trySend(false) // assume idle until the first callback says otherwise
+        awaitClose { if (registered) runCatching { tm?.unregisterTelephonyCallback(callback) } }
+    }
 }
 
 private fun Int.valid(): Int? =

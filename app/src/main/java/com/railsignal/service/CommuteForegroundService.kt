@@ -59,6 +59,7 @@ class CommuteForegroundService : Service() {
     private var stuckSince = 0L
     private var lastRecoveryAt = 0L
     @Volatile private var recovering = false
+    @Volatile private var inCall = false
 
     private val shizuku by lazy { ShizukuActuator(this) }
     private val guided by lazy { GuidedPromptActuator(this) }
@@ -90,6 +91,17 @@ class CommuteForegroundService : Service() {
             }
 
             launch { location.updates.collect { latestFix = it } }
+
+            // Call-aware recovery: a re-register can't take effect on the cell carrying an active
+            // voice bearer (the modem holds it to protect the call), so we defer while in-call and
+            // fire the instant the call ends — exactly when the modem will honour it.
+            launch {
+                app.telephony.inCall.collect { nowInCall ->
+                    val callEnded = inCall && !nowInCall
+                    inCall = nowInCall
+                    if (callEnded) watchdog(tripId, ignoreCooldown = true)
+                }
+            }
 
             var count = 0
             var lastState = ""
@@ -144,8 +156,12 @@ class CommuteForegroundService : Service() {
         )
     }
 
-    /** Decide whether we're stuck, and fire recovery once the stuck state is sustained. */
-    private fun watchdog(tripId: Long) {
+    /**
+     * Decide whether we're stuck, and fire recovery once the stuck state is sustained.
+     * [ignoreCooldown] is set on the call-ended path: that's a one-shot, deliberately-timed
+     * trigger, so it skips the inter-recovery cooldown.
+     */
+    private fun watchdog(tripId: Long, ignoreCooldown: Boolean = false) {
         if (recovering) return
         val now = System.currentTimeMillis()
         if (isAirplaneOn()) { stuckSince = 0L; return } // user has airplane on — don't fight it
@@ -163,14 +179,18 @@ class CommuteForegroundService : Service() {
         if (usable) { stuckSince = 0L; return }
         if (stuckSince == 0L) stuckSince = now
         if (now - stuckSince < STUCK_MS) return
-        if (now - lastRecoveryAt < COOLDOWN_MS) return
+        // On a call the re-register is a no-op (modem won't release the call-bearing cell) — keep
+        // accumulating stuckSince and let the call-ended trigger fire it the moment the call drops.
+        if (inCall) return
+        if (!ignoreCooldown && now - lastRecoveryAt < COOLDOWN_MS) return
 
-        val trigger = when {
+        val base = when {
             silent -> "SILENCE"
             !validated -> "NO_DATA"
             weak -> "WEAK"
             else -> "STUCK"
         }
+        val trigger = if (ignoreCooldown) "${base}_POSTCALL" else base
         lastRecoveryAt = now
         stuckSince = 0L
         val auto = mode == RecoveryMode.AUTO && shizuku.capabilities().canAuto
@@ -178,10 +198,13 @@ class CommuteForegroundService : Service() {
     }
 
     private suspend fun runRecovery(tripId: Long, trigger: String, auto: Boolean) {
+        // The radio power-cycle only ever runs inside an active logging session — never in the
+        // background. (The watchdog only ticks while recording, so this is belt-and-suspenders.)
+        if (!RecordingController.status.value.isRecording) return
         recovering = true
         val app = applicationContext as RailSignalApp
         val recoveryDao = app.db.recoveryDao()
-        val action = if (auto) "NET_REREGISTER" else "GUIDED"
+        val action = if (auto) "RADIO_CYCLE" else "GUIDED"
         RecordingController.update { it.copy(recovering = true) }
         val evId = recoveryDao.insert(
             RecoveryEvent(tripId = tripId, tsMs = System.currentTimeMillis(),
@@ -190,10 +213,21 @@ class CommuteForegroundService : Service() {
         updateNotification("Recovering ($trigger)…")
         val t0 = System.currentTimeMillis()
 
+        // abortIf = { inCall } is the last-instant gate: if a call slipped in while we were
+        // binding the Shizuku service, skip the cut entirely so we never drop the call.
         val res = if (auto) {
-            shizuku.recover(RecoveryStrategy.RADIO_CYCLE)
+            shizuku.recover(RecoveryStrategy.RADIO_CYCLE, abortIf = { inCall })
         } else {
             guided.recover(RecoveryStrategy.USER_GUIDED)
+        }
+
+        if (res.deferred) {
+            // Deliberately skipped (call active) — not a failure. Don't nag with guided; the
+            // call-ended trigger re-fires recovery once the call drops.
+            recoveryDao.finish(evId, "DEFERRED_CALL", null)
+            RecordingController.update { it.copy(recovering = false, lastRecovery = "$action → deferred (on call)") }
+            recovering = false
+            return
         }
 
         // Watch for the connection to come back.
@@ -272,7 +306,8 @@ class CommuteForegroundService : Service() {
         val r = latestReading
         val sig = if (silent) "SILENT" else "RSRP ${r?.rsrp ?: "—"}"
         val sc = RecordingController.status.value.sampleCount
-        return "$sc pts · $sig · ${if (isValidated()) "data ok" else "no data"}"
+        val callNote = if (inCall) " · on call (recovery paused)" else ""
+        return "$sc pts · $sig · ${if (isValidated()) "data ok" else "no data"}$callNote"
     }
 
     private fun ensureChannel(): String {
